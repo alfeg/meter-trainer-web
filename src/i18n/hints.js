@@ -71,6 +71,7 @@ export const HINT = {
   // settings
   daysBack: t("How many days of the device’s image folders to look at."),
   deviceState: t("One file on the device's SD card ({file}) with the images and labels of this browser. Save here, load in another browser (a phone, say) and go on labelling there; loading adds what is missing and keeps the newer label of each image.", { file: "/config/trainer-state.zip" }),
+  llmOdd: t("The AI looks at the images of each wheel shown with the same label, eight at a time, and names the ones unlike the rest, three times with different neighbours. An image named every time becomes a disagreement, so you check it in the review. It does not read the digits, so it is fast; your own labels are left alone."),
   perReading: t("Images kept per wheel and device reading (for example dig3 reading 7): the newest ones. A wheel at rest shows the same digit for days, so most of its images are not needed."),
   modelSize: t("Bigger models can be a little more accurate but take longer to read each digit on the device."),
   epochs: t("How many times training goes through all images. The page keeps the epoch with the lowest validation loss, so more is safe, only slower."),

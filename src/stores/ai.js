@@ -116,3 +116,70 @@ export async function runLlm(limit) {
     { n: done, w: q.wheels, g: q.groups, model: s.model }) + (failed ? t(", {n} failed", { n: failed }) : "") + ".");
   await refreshProject();
 }
+
+// Odd ones out: the crops of one wheel shown with the same label should all look alike. The
+// model gets them as numbered strips of up to ODD_STRIP and names the ones unlike the rest;
+// every crop goes through ODD_PASSES strips with different neighbours, and only a crop named
+// every time is marked (one strip alone names a few too many). A marked label becomes a
+// disagreement and goes to the review. Your own labels are never checked.
+const ODD_STRIP = 8, ODD_PASSES = 3, ODD_MIN = 4;
+const shuffled = (a) => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+/** Groups (wheel + shown label) with their crops to check; groups with crops not yet checked by this model first. */
+function oddGroups(model) {
+  const groups = new Map();
+  for (const c of data.crops) {
+    const e = data.eff.get(c.id);
+    if (!e?.label || !(e.status === "confirmed" || e.status === "unconfirmed" || (e.status === "conflict" && data.labels.get(c.id)?.odd))) continue;
+    const k = `${c.roi}|${e.label}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(c);
+  }
+  const fresh = (c) => { const r = data.labels.get(c.id); return !(r?.oddModel === model && r.oddFor === data.eff.get(c.id).label); };
+  return [...groups.entries()].filter(([, cs]) => cs.length >= ODD_MIN && cs.some(fresh))
+    .map(([key, crops]) => ({ key, crops })).sort((a, b) => b.crops.filter(fresh).length - a.crops.filter(fresh).length);
+}
+
+export async function findOdd() {
+  const s = settings();
+  await saveAiSettings();
+  const groups = oddGroups(s.model);
+  if (!groups.length) { say("llm", t("No group to check: every group of 4 or more images was checked by {model}.", { model: s.model })); return; }
+  const total = groups.reduce((n, g) => n + g.crops.length, 0);
+  say("llm", t("Checking {n} images in {g} groups for odd ones…", { n: total, g: groups.length }));
+  let done = 0, marked = 0, failed = 0;
+  for (const g of groups) {
+    if (app.stop) break;
+    const jpeg = new Map(await Promise.all(g.crops.map(async (c) => [c.id, await store.getJpeg(c.id)])));
+    const crops = g.crops.filter((c) => jpeg.get(c.id));
+    const named = new Map(crops.map((c) => [c.id, 0]));
+    for (let pass = 0; pass < ODD_PASSES && !app.stop; pass++) {
+      const order = shuffled(crops), n = Math.ceil(order.length / ODD_STRIP), size = Math.ceil(order.length / n);
+      for (let i = 0; i < order.length && !app.stop; i += size) {
+        const strip = order.slice(i, i + size);
+        try {
+          const r = await llm.ask(s, await llm.encodeStrip(strip.map((c) => jpeg.get(c.id))), 120000, llm.oddPrompt(strip.length));
+          const nums = llm.parseNumbers(r.raw);
+          if (!nums) { failed++; continue; } // no answer: counts as not named
+          for (const k of nums) if (strip[k - 1]) named.set(strip[k - 1].id, named.get(strip[k - 1].id) + 1);
+        } catch (e) {
+          failed++;
+          if (failed >= 3 && !done) throw e;
+        }
+      }
+    }
+    if (app.stop) break;
+    const label = g.key.split("|")[1];
+    for (const c of crops) {
+      const odd = named.get(c.id) >= ODD_PASSES;
+      marked += odd;
+      await setLabelFields(c, { odd: odd || null, oddFor: label, oddModel: s.model });
+    }
+    done += crops.length;
+    say("llm", t("{i} of {n} images checked, {m} odd ones", { i: done, n: total, m: marked }) + (failed ? t(", {n} failed", { n: failed }) : ""));
+    app.progress = t("odd ones {i}/{n}", { i: done, n: total });
+  }
+  say("llm", t(app.stop ? "Stopped: {n} images checked by {model}, {m} odd ones sent to the review as disagreements" : "Done: {n} images checked by {model}, {m} odd ones sent to the review as disagreements",
+    { n: done, model: s.model, m: marked }) + (failed ? t(", {n} failed", { n: failed }) : "") + ".");
+  await refreshProject();
+}

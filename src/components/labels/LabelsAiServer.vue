@@ -3,10 +3,11 @@
 import { t, tHtml } from "@/i18n/index.js";
 import { HINT } from "@/i18n/hints.js";
 import { app, runTask, requestStop } from "@/stores/app.js";
-import { ai, saveAiSettings, providerChanged, loadModels, testOne, runLlm } from "@/stores/ai.js";
+import { ai, saveAiSettings, providerChanged, loadModels, testOne, runLlm, findOdd } from "@/stores/ai.js";
 import BaseStatusLine from "@/components/BaseStatusLine.vue";
 
 const label = () => runTask("AI labelling", "llm", () => runLlm(ai.n || 200), (err) => err);
+const odd = () => runTask("AI odd ones", "llm", findOdd, (err) => err);
 const origin = location.origin;
 const onToggle = (e) => { if (e.target.open) loadModels(); };
 </script>
@@ -31,7 +32,10 @@ const onToggle = (e) => { if (e.target.open) loadModels(); };
       <div class="row">
         <label class="f" for="llmN" :data-hint="HINT.llmN">{{ t("Images to label") }} <input id="llmN" v-model.number="ai.n" type="number" min="1" step="10"></label>
         <button id="btnLlm" class="primary" :disabled="!!app.busy" @click="label">{{ t("Label with AI") }}</button>
-        <button id="btnLlmStop" :disabled="app.task !== 'AI labelling'" @click="requestStop">{{ t("Stop") }}</button>
+        <button id="btnLlmStop" :disabled="app.task !== 'AI labelling' && app.task !== 'AI odd ones'" @click="requestStop">{{ t("Stop") }}</button>
+      </div>
+      <div class="row">
+        <button id="btnLlmOdd" :disabled="!!app.busy" :data-hint="HINT.llmOdd" @click="odd">{{ t("Find odd images in groups") }}</button>
       </div>
       <BaseStatusLine id="llmStatus" where="llm" />
     </div>

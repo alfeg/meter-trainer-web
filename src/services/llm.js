@@ -12,6 +12,19 @@ export const PROMPT =
   "If the wheel is exactly halfway between two digits, reply with both, lower first, like 3/4 " +
   "(9/0 for the 9-to-0 transition). If you cannot read it, reply N. Reply with nothing else.";
 
+/** Odd-one-out in a strip of k crops of one wheel that should all look alike. */
+export const oddPrompt = (k) =>
+  `The image shows ${k} crops of the same digit wheel of a mechanical rolling meter counter, numbered 1 to ${k} above each crop. ` +
+  "Most of them show the wheel in the same position. Which crops show a different digit or position than the majority? " +
+  "Reply with only a JSON array of their numbers, [] if all of them show the same.";
+
+/** The numbers in a JSON array answer, or null when there is none. */
+export function parseNumbers(text) {
+  const m = (text || "").match(/\[[^\]]*\]/);
+  if (!m) return null;
+  try { return JSON.parse(m[0]).map(Number).filter(Number.isInteger); } catch { return null; }
+}
+
 export function parseAnswer(text) {
   const s = (text || "").trim();
   const m = s.match(/\b(\d)\s*\/\s*(\d)\b/);
@@ -29,6 +42,28 @@ export async function encodeCrop(bytes, minH = 128) {
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(bmp, 0, 0, c.width, c.height);
   bmp.close();
+  return toBase64(c);
+}
+
+/** Crops side by side, each 128 px high, numbered 1..n above (for oddPrompt). */
+export async function encodeStrip(list, h = 128) {
+  const bmps = await Promise.all(list.map((b) => createImageBitmap(new Blob([b], { type: "image/jpeg" }))));
+  const w = Math.round((bmps[0].width / bmps[0].height) * h), pad = 6, top = 26;
+  const c = new OffscreenCanvas(pad + bmps.length * (w + pad), top + h + pad);
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.imageSmoothingQuality = "high";
+  ctx.fillStyle = "#000"; ctx.font = "18px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+  bmps.forEach((b, i) => {
+    const x = pad + i * (w + pad);
+    ctx.drawImage(b, x, top, w, h);
+    ctx.fillText(String(i + 1), x + w / 2, 4);
+    b.close();
+  });
+  return toBase64(c);
+}
+
+async function toBase64(c) {
   const blob = await c.convertToBlob({ type: "image/jpeg", quality: 0.92 });
   const buf = new Uint8Array(await blob.arrayBuffer());
   let bin = "";
@@ -38,8 +73,8 @@ export async function encodeCrop(bytes, minH = 128) {
 
 const trimUrl = (u) => u.replace(/\/+$/, "").replace(/\/v1$/, "");
 
-/** settings: {provider, url, model, key}; returns {answer, raw, seconds} */
-export async function ask(settings, b64, timeoutMs = 120000) {
+/** settings: {provider, url, model, key}; returns {answer, raw, seconds} (raw: the whole reply when a prompt is given) */
+export async function ask(settings, b64, timeoutMs = 120000, prompt = PROMPT) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   const t0 = performance.now();
@@ -49,7 +84,7 @@ export async function ask(settings, b64, timeoutMs = 120000) {
       r = await fetch(`${trimUrl(settings.url)}/api/chat`, {
         method: "POST", signal: ctl.signal, headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: settings.model, stream: false, think: false,
-          messages: [{ role: "user", content: PROMPT, images: [b64] }],
+          messages: [{ role: "user", content: prompt, images: [b64] }],
           options: { temperature: 0, num_predict: 1500 } }),
       });
       if (!r.ok) throw new Error(t("Ollama answered HTTP {status}: {body}", { status: r.status, body: (await r.text()).slice(0, 160) }));
@@ -61,13 +96,13 @@ export async function ask(settings, b64, timeoutMs = 120000) {
         method: "POST", signal: ctl.signal, headers,
         body: JSON.stringify({ model: settings.model, temperature: 0, max_tokens: 1500,
           messages: [{ role: "user", content: [
-            { type: "text", text: PROMPT },
+            { type: "text", text: prompt },
             { type: "image_url", image_url: { url: `data:image/jpeg;base64,${b64}` } }] }] }),
       });
       if (!r.ok) throw new Error(t("Server answered HTTP {status}: {body}", { status: r.status, body: (await r.text()).slice(0, 160) }));
       raw = (await r.json()).choices?.[0]?.message?.content || "";
     }
-    return { answer: parseAnswer(raw), raw: raw.slice(0, 80), seconds: (performance.now() - t0) / 1000 };
+    return { answer: parseAnswer(raw), raw: prompt === PROMPT ? raw.slice(0, 80) : raw, seconds: (performance.now() - t0) / 1000 };
   } catch (e) {
     if (e.name === "AbortError") throw new Error(t("no answer within {n} s", { n: timeoutMs / 1000 }));
     if (e instanceof TypeError) throw new Error(blockedHint(settings));

@@ -3,6 +3,9 @@
 //   device     the device model's reading (crop file name)  not a vote when it was rejected
 //   steady     the same device reading for >= STEADY rounds in a row (a wheel at rest)
 //   llm        a vision model's answer (Ollama / OpenAI-compatible)
+//   odd        a vision model found the crop unlike the others of its wheel shown with the
+//              same label (a strip of them, checked three times): no answer of its own, but
+//              it sends the label to the review as a disagreement
 // Two agreeing sources = "confirmed" (trained on). A single source = "unconfirmed",
 // disagreement = "conflict": both go to the review queue and are not trained on unless
 // the user says so; training on the device's own readings would repeat its mistakes.
@@ -50,6 +53,14 @@ export function steadyLabels(crops) {
  * status: human | confirmed | unconfirmed | conflict | excluded | none
  */
 export function effective(crop, rec, steady) {
+  const e = evidence(crop, rec, steady);
+  if (rec?.odd && rec.oddFor === e.label && (e.status === "confirmed" || e.status === "unconfirmed")) {
+    return { label: e.label, status: "conflict", sources: "AI: odd one out", score: 0.15 };
+  }
+  return e;
+}
+
+function evidence(crop, rec, steady) {
   if (rec?.human) {
     return rec.human === "x" ? { label: null, status: "excluded", sources: "you", score: 2 }
       : { label: rec.human, status: "human", sources: "you", score: 2 };
