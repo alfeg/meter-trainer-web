@@ -5,7 +5,7 @@
 Train a digit model for **your own meter** in the browser, straight from an
 [AI-on-the-edge-device](https://github.com/jomjol/AI-on-the-edge-device) meter.
 
-A single HTML page (`trainer.html.gz`, ~500 KB) that collects the digit images the device
+A single HTML page (`trainer.html.gz`, ~370 KB) that collects the digit images the device
 saves, labels them, trains the digit model in the browser and installs the int8 `.tflite`
 file the firmware loads. It is served from the device's SD card (`/html/trainer.html.gz`)
 or opened from disk. There are no CDN links, so it works on a network without internet
