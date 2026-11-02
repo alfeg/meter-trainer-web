@@ -32,8 +32,9 @@ export async function loadCollectSpeed() {
 async function rememberSpeed(res) {
   const n = res.fetched + res.failed;
   if (n < SPEED_MIN_IMAGES || res.seconds < SPEED_MIN_SECONDS) return;
-  collect.speed = { rate: n / res.seconds, n, at: Date.now() };
-  await store.kvSet("collectSpeed", collect.speed);
+  const speed = { rate: n / res.seconds, n, at: Date.now() };
+  collect.speed = speed;
+  await store.kvSet("collectSpeed", speed);
 }
 
 /** Crops already stored per download group (wheel + device reading). */
