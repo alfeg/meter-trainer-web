@@ -1,7 +1,7 @@
 {
   "name": "meter-trainer-web",
   "private": true,
-  "version": "0.7.3",
+  "version": "0.7.4",
   "type": "module",
   "description": "Train AI-on-the-edge digit models in the browser; builds to one HTML file served from the device SD card.",
   "scripts": {
